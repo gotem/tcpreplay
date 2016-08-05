@@ -227,17 +227,19 @@ dlt_en10mb_parse_opts(tcpeditdlt_t *ctx)
             config->vlan = TCPEDIT_VLAN_ADD;
         } else if (strcmp(OPT_ARG(ENET_VLAN), "del") == 0) {
             config->vlan = TCPEDIT_VLAN_DEL;
+        } else if (strcmp(OPT_ARG(ENET_VLAN), "push") == 0) {
+            config->vlan = TCPEDIT_VLAN_PUSH;
         } else {
             tcpedit_seterr(ctx->tcpedit, "Invalid --enet-vlan=%s", OPT_ARG(ENET_VLAN));
             return -1;
         }
 
         if (config->vlan != TCPEDIT_VLAN_OFF) {
-            if (config->vlan == TCPEDIT_VLAN_ADD) {
+            if (config->vlan == TCPEDIT_VLAN_ADD || config->vlan == TCPEDIT_VLAN_PUSH) {
                 if (! HAVE_OPT(ENET_VLAN_TAG)) {
                     tcpedit_seterr(ctx->tcpedit, "%s",
                             "Must specify a new 802.1 VLAN tag if vlan "
-                            "mode is add");
+                            "mode is add or push");
                     return TCPEDIT_ERROR;
                 }
 
@@ -272,10 +274,14 @@ dlt_en10mb_decode(tcpeditdlt_t *ctx, const u_char *packet, const int pktlen)
     struct tcpr_ethernet_hdr *eth = NULL;
     struct tcpr_802_1q_hdr *vlan = NULL;
     en10mb_extra_t *extra = NULL;
+    tcpeditdlt_plugin_t *plugin = NULL;
+    en10mb_config_t *config = NULL;
     
     assert(ctx);
     assert(packet);
     assert(pktlen >= 14);
+    plugin = tcpedit_dlt_getplugin(ctx, dlt_value);
+    config = plugin->config;
 
     /* get our src & dst address */
     eth = (struct tcpr_ethernet_hdr *)packet;
@@ -290,6 +296,8 @@ dlt_en10mb_decode(tcpeditdlt_t *ctx, const u_char *packet, const int pktlen)
         case ETHERTYPE_VLAN:
             vlan = (struct tcpr_802_1q_hdr *)packet;
             ctx->proto = vlan->vlan_len;
+	    if(config->vlan == TCPEDIT_VLAN_PUSH)
+		ctx->proto = eth->ether_type;
             
             /* Get VLAN tag info */
             extra->vlan = 1;
@@ -341,7 +349,9 @@ dlt_en10mb_encode(tcpeditdlt_t *ctx, u_char *packet, int pktlen, tcpr_dir_t dir)
     
     /* figure out the new layer2 length, first for the case: ethernet -> ethernet? */
     if (ctx->decoder->dlt == dlt_value) {
-        if ((ctx->l2len == TCPR_802_1Q_H && config->vlan == TCPEDIT_VLAN_OFF) ||
+	if(config->vlan == TCPEDIT_VLAN_PUSH)
+		newl2len = ctx->l2len +4;
+	else if ((ctx->l2len == TCPR_802_1Q_H && config->vlan == TCPEDIT_VLAN_OFF) ||
             (config->vlan == TCPEDIT_VLAN_ADD)) {
             newl2len = TCPR_802_1Q_H;
         } else if ((ctx->l2len == TCPR_802_3_H && config->vlan == TCPEDIT_VLAN_OFF) ||
@@ -358,7 +368,10 @@ dlt_en10mb_encode(tcpeditdlt_t *ctx, u_char *packet, int pktlen, tcpr_dir_t dir)
 
     /* Make space for our new L2 header */
     if (newl2len != ctx->l2len)
-        memmove(packet + newl2len, packet + ctx->l2len, pktlen - ctx->l2len);
+    {
+	int diff = newl2len - ctx->l2len;	
+        memmove(packet + TCPR_802_3_H +diff, packet + TCPR_802_3_H, pktlen - diff);
+    }
 
     /* update the total packet length */
     pktlen += newl2len - ctx->l2len;
@@ -444,7 +457,7 @@ dlt_en10mb_encode(tcpeditdlt_t *ctx, u_char *packet, int pktlen, tcpr_dir_t dir)
         /* all we need for 802.3 is the proto */
         eth->ether_type = ctx->proto;
         
-    } else if (newl2len == TCPR_802_1Q_H) {
+    } else if (newl2len >= TCPR_802_1Q_H) {
         /* VLAN tags need a bit more */
         vlan = (struct tcpr_802_1q_hdr *)packet;
         vlan->vlan_len = ctx->proto;

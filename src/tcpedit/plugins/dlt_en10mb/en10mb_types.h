@@ -45,7 +45,8 @@ typedef enum {
 typedef enum {
     TCPEDIT_VLAN_OFF = 0,
     TCPEDIT_VLAN_DEL,  /* strip 802.1q and rewrite as standard 802.3 Ethernet */
-    TCPEDIT_VLAN_ADD   /* add/replace 802.1q vlan tag */
+    TCPEDIT_VLAN_ADD,   /* add/replace 802.1q vlan tag */
+    TCPEDIT_VLAN_PUSH   /* push 802.1q vlan tag */
 } tcpedit_vlan;
     
 typedef struct {
