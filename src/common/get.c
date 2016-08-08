@@ -111,14 +111,14 @@ get_l2protocol(const u_char *pktdata, const int datalen, const int datalink)
     case DLT_EN10MB:
         eth_hdr = (eth_hdr_t *)(pktdata + eth_hdr_offset);
         ether_type = ntohs(eth_hdr->ether_type);
-        switch (ether_type) {
-        case ETHERTYPE_VLAN: /* 802.1q */
-            vlan_hdr = (vlan_hdr_t *)pktdata;
-            return ntohs(vlan_hdr->vlan_len);
-        default:
-            return ether_type; /* yes, return it in host byte order */
-        }
-        break;
+	
+	while (ether_type == ETHERTYPE_VLAN) {
+	    vlan_hdr = (vlan_hdr_t *)(pktdata + eth_hdr_offset);
+	    ether_type = ntohs(vlan_hdr->vlan_len);
+	    eth_hdr_offset += 4;
+	}
+
+        return ether_type; /* yes, return it in host byte order */
 
     case DLT_PPP_SERIAL:
         ppp = (struct tcpr_pppserial_hdr *)pktdata;
